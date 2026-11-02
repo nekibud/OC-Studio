@@ -1,0 +1,35 @@
+﻿OC Studio 0.18.1 — PR 提交说明
+================================
+
+本文件夹包含：
+- 上游 Pokanshuu/OC-Studio main 的完整快照（基线提交）
+- 只覆盖了有差异的源码文件（feat/oc-studio-0.18.1-win10 分支）
+- changes.patch：相对上游 main 的补丁
+- 提交PR.ps1：自动克隆 fork、同步上游、应用补丁并推送
+
+推荐流程（自动）：
+1. 确保电脑已登录 GitHub（Git Credential Manager 或 gh auth login）。
+2. 右键“提交PR.ps1” → 使用 PowerShell 运行，或在终端执行：
+   powershell -ExecutionPolicy Bypass -File .\提交PR.ps1
+3. 脚本会自动：
+   - 克隆 https://github.com/nekibud/OC-Studio.git 到临时目录
+   - 添加 upstream 并 fetch
+   - 从 upstream/main 创建 feat/oc-studio-0.18.1-win10
+   - git am changes.patch
+   - push 到你 fork 的同名分支
+4. 打开下面地址创建 PR：
+   https://github.com/Pokanshuu/OC-Studio/compare/main...nekibud:feat/oc-studio-0.18.1-win10?expand=1
+
+手动流程：
+  git clone https://github.com/nekibud/OC-Studio.git
+  cd OC-Studio
+  git remote add upstream https://github.com/Pokanshuu/OC-Studio.git
+  git fetch upstream
+  git checkout -b feat/oc-studio-0.18.1-win10 upstream/main
+  git am /path/to/changes.patch
+  git push -u origin feat/oc-studio-0.18.1-win10
+
+注意：
+- 建议先在你的 fork 页面点 “Sync fork” 与上游同步，再运行脚本。
+- 如果 git am 有冲突，说明上游改动较大，需要手动解决后 commit。
+- 本文件夹的 main 分支是上游快照，不是你的 fork 历史；不要直接把本文件夹 push 到 fork main。
