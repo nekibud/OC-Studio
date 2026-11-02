@@ -1,0 +1,235 @@
+'use client'
+
+import { useState, useEffect, useCallback, useRef, createContext, useContext, type ReactNode } from 'react'
+import { tauriReadClipboard } from '@/lib/tauri-clipboard'
+import { createPortal } from 'react-dom'
+import { Separator } from '@/components/ui/separator'
+import { MENU, MENU_ITEM } from '@/lib/ui-tokens'
+import { adjustContextMenuPosition } from '@/lib/menu-utils'
+
+interface InputMenuContextValue {
+  openMenuAt: (target: HTMLElement, x: number, y: number) => void
+}
+
+const InputMenuContext = createContext<InputMenuContextValue | null>(null)
+
+export function useInputMenuContext() {
+  return useContext(InputMenuContext)
+}
+
+interface SelectionSnapshot {
+  startContainer: Node | null
+  startOffset: number
+  endContainer: Node | null
+  endOffset: number
+}
+
+export function GlobalContextMenu({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const [adjPosition, setAdjPosition] = useState({ x: 0, y: 0 })
+  const [visible, setVisible] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const targetRef = useRef<HTMLElement | null>(null)
+  const initialSelRef = useRef<SelectionSnapshot | null>(null)
+  const openedAtRef = useRef(0)
+  const cooldownUntilRef = useRef(0)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  const openMenuAt = useCallback((target: HTMLElement, x: number, y: number) => {
+    targetRef.current = target
+    target.focus()
+    setPosition({ x, y })
+    setVisible(false)
+    setOpen(true)
+
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0) {
+      const r = sel.getRangeAt(0)
+      initialSelRef.current = {
+        startContainer: r.startContainer,
+        startOffset: r.startOffset,
+        endContainer: r.endContainer,
+        endOffset: r.endOffset,
+      }
+    } else {
+      initialSelRef.current = null
+    }
+    openedAtRef.current = Date.now()
+  }, [])
+
+  const handleContextMenu = useCallback((e: MouseEvent) => {
+    if (Date.now() < cooldownUntilRef.current) {
+      e.preventDefault()
+      return
+    }
+    const target = e.target as HTMLElement
+    if (target.closest?.('.ProseMirror')) return
+
+    const isEditableEl = target instanceof HTMLInputElement
+      ? !['radio', 'checkbox', 'button', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(target.type)
+      : target instanceof HTMLTextAreaElement || target.isContentEditable
+
+    if (!isEditableEl) {
+      // 非文本区一律吃掉系统菜单：WebView 自带的「刷新 / 另存为 / 检查」既用不上，
+      // 也不属于这套界面语言。关掉后右键在这些区域就是「没反应」，
+      // 需要菜单的地方自有应用的右键菜单接手。
+      e.preventDefault()
+      return
+    }
+
+    e.preventDefault()
+    openMenuAt(target, e.clientX, e.clientY)
+  }, [openMenuAt])
+
+  useEffect(() => {
+    if (!open || !menuRef.current) return
+    const rect = menuRef.current.getBoundingClientRect()
+    const adjusted = adjustContextMenuPosition(position.x, position.y, rect.width, rect.height)
+    setAdjPosition(adjusted)
+    setVisible(true)
+  }, [open, position])
+
+  useEffect(() => {
+    document.addEventListener('contextmenu', handleContextMenu)
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu)
+    }
+  }, [handleContextMenu])
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        close()
+      }
+    }
+    document.addEventListener('pointerdown', handler, true)
+    return () => document.removeEventListener('pointerdown', handler, true)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const handler = () => {
+      if (Date.now() - openedAtRef.current < 100) return
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) return
+      if (sel.rangeCount === 0 || !initialSelRef.current) return
+      const r = sel.getRangeAt(0)
+      const init = initialSelRef.current
+      if (
+        r.startContainer !== init.startContainer ||
+        r.startOffset !== init.startOffset ||
+        r.endContainer !== init.endContainer ||
+        r.endOffset !== init.endOffset
+      ) {
+        if (cooldownUntilRef.current < Date.now()) {
+          cooldownUntilRef.current = Date.now() + 300
+        }
+        closeImmediate()
+      }
+    }
+    document.addEventListener('selectionchange', handler)
+    return () => document.removeEventListener('selectionchange', handler)
+  }, [open])
+
+  // 用函数声明而不是 const 箭头函数：上面的 effect 里要用到它们，
+  // 函数声明会提升，避免「先使用后声明」（react-hooks/immutability）
+  function close() {
+    setVisible(false)
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = setTimeout(() => setOpen(false), 150)
+  }
+  function closeImmediate() {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    setOpen(false)
+    setVisible(false)
+  }
+
+  useEffect(() => {
+    return () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current) }
+  }, [])
+
+  const handleCut = useCallback(() => {
+    const el = targetRef.current
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.focus()
+    }
+    try { document.execCommand('cut') } catch { /* */ }
+    close()
+  }, [])
+
+  const handleCopy = useCallback(() => {
+    const el = targetRef.current
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.focus()
+    }
+    try { document.execCommand('copy') } catch { /* */ }
+    close()
+  }, [])
+
+  const handlePaste = useCallback(async () => {
+    const el = targetRef.current
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.focus()
+      try {
+        const text = await tauriReadClipboard()
+        const start = el.selectionStart ?? 0
+        const end = el.selectionEnd ?? 0
+        el.setRangeText(text, start, end, 'end')
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+      } catch { /* clipboard unavailable */ }
+    }
+    close()
+  }, [])
+
+  const handleSelectAll = useCallback(() => {
+    const el = targetRef.current
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.select()
+    } else {
+      try { document.execCommand('selectAll') } catch { /* */ }
+    }
+    close()
+  }, [])
+
+  const menuEl = open ? (
+    <div className="pointer-events-none fixed inset-0 z-50">
+      <div
+        ref={menuRef}
+        className={`pointer-events-auto absolute flex flex-col ${MENU} context-menu-fade ${visible ? 'context-menu-visible' : ''}`}
+        style={{
+          left: adjPosition.x,
+          top: adjPosition.y,
+        }}
+      >
+        <button onClick={handleCut} className={MENU_ITEM}>
+          <span>剪切</span>
+          <span className="ml-auto text-[11px] text-ink-faint">Ctrl+X</span>
+        </button>
+        <button onClick={handleCopy} className={MENU_ITEM}>
+          <span>复制</span>
+          <span className="ml-auto text-[11px] text-ink-faint">Ctrl+C</span>
+        </button>
+        <button onClick={handlePaste} className={MENU_ITEM}>
+          <span>粘贴</span>
+          <span className="ml-auto text-[11px] text-ink-faint">Ctrl+V</span>
+        </button>
+        <Separator className="mx-2 my-1" />
+        <button onClick={handleSelectAll} className={MENU_ITEM}>
+          <span>全选</span>
+          <span className="ml-auto text-[11px] text-ink-faint">Ctrl+A</span>
+        </button>
+      </div>
+    </div>
+  ) : null
+
+  const contextValue: InputMenuContextValue = { openMenuAt }
+
+  return (
+    <InputMenuContext.Provider value={contextValue}>
+      {children}
+      {open ? createPortal(menuEl, document.getElementById('overlay-root')!) : null}
+    </InputMenuContext.Provider>
+  )
+}

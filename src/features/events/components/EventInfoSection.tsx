@@ -1,0 +1,102 @@
+'use client'
+
+import { Checkbox } from '@/components/ui/checkbox'
+import { DATE_INPUT, FIELD_GRID, FIELD_INPUT, FIELD_LABEL, FIELD_ROW, SECTION_TITLE } from '@/lib/ui-tokens'
+import { useFields, type FieldDef } from '@/lib/fields'
+import type { EventForm } from '../hooks/useEventForm'
+
+/**
+ * 基本信息 —— 按字段表渲染（`设置 › 世界 › 事件信息`）。
+ * 开始 / 结束各占一格（三个输入），地点 / 重大各占一格，自定义字段各占一格。
+ * 标签那一行归「关联」区，这里跳过。
+ */
+export function EventInfoSection({
+  form,
+  compact = false,
+}: {
+  form: EventForm
+  /** 三栏中栏的窄容器：字段单列（不依赖 viewport 的 sm 断点） */
+  compact?: boolean
+}) {
+  const fields = useFields('event')
+
+  const renderRow = (field: FieldDef) => {
+    if (field.id === 'time' || field.id === 'endTime') {
+      const isEnd = field.id === 'endTime'
+      const year = isEnd ? form.endYear : form.year
+      const month = isEnd ? form.endMonth : form.month
+      const day = isEnd ? form.endDay : form.day
+      const setYear = isEnd ? form.setEndYear : form.setYear
+      const setMonth = isEnd ? form.setEndMonth : form.setMonth
+      const setDay = isEnd ? form.setEndDay : form.setDay
+      return (
+        <div key={field.id} className={FIELD_ROW}>
+          <span className={FIELD_LABEL}>{field.label}</span>
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <input value={year} onChange={(e) => setYear(e.target.value)} placeholder="年" className={DATE_INPUT} />
+            <input value={month} onChange={(e) => setMonth(e.target.value)} placeholder="月" className={DATE_INPUT} />
+            <input value={day} onChange={(e) => setDay(e.target.value)} placeholder="日" className={DATE_INPUT} />
+          </div>
+        </div>
+      )
+    }
+
+    if (field.id === 'isMajor') {
+      return (
+        <label key={field.id} className={`${FIELD_ROW} cursor-pointer`}>
+          <span className={FIELD_LABEL}>{field.label}</span>
+          <Checkbox
+            checked={form.isMajor}
+            onCheckedChange={(checked) => form.setIsMajor(checked === true)}
+          />
+        </label>
+      )
+    }
+
+    if (field.id === 'location') {
+      return (
+        <div key={field.id} className={FIELD_ROW}>
+          <span className={FIELD_LABEL}>{field.label}</span>
+          <input
+            type="text"
+            value={form.location}
+            onChange={(e) => form.setLocation(e.target.value)}
+            placeholder="地点"
+            className={FIELD_INPUT}
+          />
+        </div>
+      )
+    }
+
+    // 标签归「关联」区渲染
+    if (field.id === 'tags') return null
+
+    const key = field.key ?? field.id
+    return (
+      <div key={field.id} className={FIELD_ROW}>
+        <span className={FIELD_LABEL}>{field.label}</span>
+        <input
+          type="text"
+          value={form.custom[key] ?? ''}
+          onChange={(e) => form.setCustomValue(key, e.target.value)}
+          className={FIELD_INPUT}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <section>
+      <h3 className={SECTION_TITLE}>基本信息</h3>
+      <div
+        className={
+          compact
+            ? 'grid grid-cols-1 [&>*:last-child]:border-b-0'
+            : `grid grid-cols-1 gap-x-10 sm:grid-cols-2 ${FIELD_GRID}`
+        }
+      >
+        {fields.map(renderRow)}
+      </div>
+    </section>
+  )
+}

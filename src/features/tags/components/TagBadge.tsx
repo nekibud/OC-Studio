@@ -1,0 +1,52 @@
+'use client'
+
+import { X } from 'lucide-react'
+import type { Tag } from '@/types'
+
+// 注意：这里必须是**完整字面量**类名。Tailwind 的 JIT 按源码文本扫描生成 CSS，
+// 用 `bg-[${hex}]/15` 这类拼接写法不会产出任何样式。
+// 色板的唯一源在 `@/lib/tag-colors.ts`（导入 vault 时为新标签分配颜色用）。
+const PRESET_COLORS: Record<string, string> = {
+  '#FF6B6B': 'bg-[#FF6B6B]/15 text-[#FF6B6B]',
+  '#4ECDC4': 'bg-[#4ECDC4]/15 text-[#4ECDC4]',
+  '#45B7D1': 'bg-[#45B7D1]/15 text-[#45B7D1]',
+  '#96CEB4': 'bg-[#96CEB4]/15 text-[#96CEB4]',
+  '#FFEAA7': 'bg-[#FFEAA7]/15 text-[#FFEAA7]',
+  '#DDA0DD': 'bg-[#DDA0DD]/15 text-[#DDA0DD]',
+  '#98D8C8': 'bg-[#98D8C8]/15 text-[#98D8C8]',
+  '#F7DC6F': 'bg-[#F7DC6F]/15 text-[#F7DC6F]',
+  '#BB8FCE': 'bg-[#BB8FCE]/15 text-[#BB8FCE]',
+  '#85C1E9': 'bg-[#85C1E9]/15 text-[#85C1E9]',
+}
+
+/** 无色标签与 CHIP 同款：无描边、纸灰底 */
+const FALLBACK_CLASS = 'bg-paper-alt text-ink-muted'
+
+interface TagBadgeProps {
+  tag: Tag
+  onRemove?: () => void
+}
+
+export function TagBadge({ tag, onRemove }: TagBadgeProps) {
+  const colorClass = PRESET_COLORS[tag.color] ?? FALLBACK_CLASS
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-item px-2 py-[3px] text-[12px] ${colorClass}`}
+    >
+      {tag.name}
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove()
+          }}
+          className="ml-0.5 rounded-item p-0.5 transition-colors hover:text-error"
+        >
+          <X size={12} strokeWidth={2} />
+        </button>
+      ) : null}
+    </span>
+  )
+}

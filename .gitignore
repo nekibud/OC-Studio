@@ -1,0 +1,96 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+#开发文档（公开：设计文档 / 待办 / agent 约定）
+# docs/ 与 todo.md / AGENTS.md / CLAUDE.md 已纳入版本管理
+
+# 构建产物
+.next/
+out/
+
+# 依赖文件
+node_modules/
+
+# Tauri 构建产物
+src-tauri/target/
+
+# Android 构建产物
+android/app/release/
+
+# 环境变量
+.env
+.env.local
+.env.production
+
+# TypeScript 编译缓存
+tsconfig.tsbuildinfo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# 编辑器配置
+.vscode/
+.vs/
+
+# .opencode：只公开 skills（agent 约定文档），依赖与本地状态不公开
+/.opencode/*
+!/.opencode/skills/
+opencode.json
+.claude/
+
+# Android IDE
+android/.idea/
+
+# 应用图标源文件（生成产物在 src-tauri/icons/ 中）
+app-icon.png
+
+# MSIX 打包产物
+*.msix
+*.msixupload
+*.appx
+MSIX_Package/
+
+# 设计参考 demo（三栏编辑原型），不随产品提交
+sample/

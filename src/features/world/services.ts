@@ -1,0 +1,131 @@
+import { db } from '@/lib/db'
+import { logOperation, pendingStamp } from '@/lib/sync'
+import { listActive, getById, softDelete } from '@/lib/repository'
+import { updateReferencesAfterRename, syncReferenceLabels } from '@/lib/reference-sync'
+import type { WorldEntry } from '@/types'
+import type { WorldFormData } from './types'
+
+const TABLE = 'worldEntries'
+
+function buildDefaultEntry(data: WorldFormData, overrides: Partial<WorldEntry> = {}): Omit<WorldEntry, 'id'> {
+  const now = Date.now()
+  return {
+    title: data.title,
+    content: data.content ?? '',
+    // 历史字段：界面已经不再编辑它（层级只由 parentId 表达），新条目一律空
+    category: '',
+    parentId: data.parentId,
+    order: data.order,
+    isConcept: data.isConcept,
+    references: [],
+    tags: data.tags ?? [],
+    createdAt: now,
+    updatedAt: now,
+    deleted: false,
+    ...pendingStamp(now),
+    ...overrides,
+  }
+}
+
+export async function getEntries(): Promise<WorldEntry[]> {
+  return listActive(db.worldEntries, 'title')
+}
+
+export async function getEntry(id: number): Promise<WorldEntry | undefined> {
+  return getById(db.worldEntries, id)
+}
+
+export async function createEntry(data: WorldFormData): Promise<number> {
+  const entry = buildDefaultEntry(data)
+  const id = await db.worldEntries.add(entry)
+  await logOperation(TABLE, id, 'title', '', data.title)
+  return id
+}
+
+export async function updateEntry(id: number, data: Partial<WorldFormData>): Promise<void> {
+  const existing = await db.worldEntries.get(id)
+  if (!existing) throw new Error(`WorldEntry not found: ${id}`)
+  const now = Date.now()
+  const updates: Partial<WorldEntry> = { updatedAt: now, ...pendingStamp(now) }
+  type FieldKey = keyof WorldFormData
+  const fields: FieldKey[] = ['title', 'content', 'parentId', 'order', 'isConcept']
+  for (const field of fields) {
+    const newValue = data[field]
+    if (newValue !== undefined) {
+      const oldValue = existing[field] ?? ''
+      ;(updates as Record<string, unknown>)[field] = newValue
+      await logOperation(TABLE, id, field, String(oldValue), String(newValue ?? ''))
+    }
+  }
+
+  if (data.tags !== undefined) {
+    ;(updates as Record<string, unknown>).tags = data.tags
+    await logOperation(
+      TABLE,
+      id,
+      'tags',
+      JSON.stringify(existing.tags ?? []),
+      JSON.stringify(data.tags),
+    )
+  }
+
+  if (data.document !== undefined) {
+    const synced = await syncReferenceLabels(data.document as Record<string, unknown>)
+    ;(updates as Record<string, unknown>).document = synced
+  }
+
+  await db.worldEntries.update(id, updates)
+
+  if (data.title !== undefined) {
+    updateReferencesAfterRename('world', id, data.title).catch(() => {})
+  }
+}
+
+export async function deleteEntry(id: number): Promise<void> {
+  await softDelete(db.worldEntries, id, TABLE)
+}
+
+export async function saveEntryContent(
+  id: number,
+  title: string,
+  content: string,
+): Promise<void> {
+  try {
+    const now = Date.now()
+    await db.worldEntries.update(id, {
+      title,
+      content,
+      updatedAt: now,
+      ...pendingStamp(now),
+    })
+  } catch (err) {
+    console.error(`[saveEntryContent] 自动保存失败 id=${id}:`, err)
+    throw err
+  }
+}
+
+export async function reorderEntries(
+  updates: { id: number; parentId: number | null; order: number }[],
+): Promise<void> {
+  const now = Date.now()
+  for (const u of updates) {
+    await db.worldEntries.update(u.id, {
+      parentId: u.parentId,
+      order: u.order,
+      updatedAt: now,
+      ...pendingStamp(now),
+    })
+  }
+}
+
+export async function renameEntry(id: number, title: string): Promise<void> {
+  const now = Date.now()
+  await db.worldEntries.update(id, {
+    title,
+    updatedAt: now,
+    ...pendingStamp(now),
+  })
+
+  updateReferencesAfterRename('world', id, title).catch(() => {})
+  await logOperation(TABLE, id, 'title', '', title)
+}

@@ -1,0 +1,135 @@
+'use client'
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useCallback } from 'react'
+import type { Country } from '@/types'
+import type { CountryFormData } from '../types'
+import * as countryService from '../services'
+import { DATA_UPDATED_EVENT } from '@/lib/data-events'
+
+const LIST_KEY = ['countries']
+
+function makeCountryKey(id: number | null) {
+  return ['country', id]
+}
+
+export function useCountryList(): {
+  countries: Country[]
+  loading: boolean
+  error: string | null
+  refresh: () => void
+} {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: LIST_KEY,
+    queryFn: () => countryService.getCountries(),
+    staleTime: 30_000,
+  })
+
+  const refresh = useCallback(() => {
+    void refetch()
+  }, [refetch])
+
+  useEffect(() => {
+    const handler = () => { void refetch() }
+    window.addEventListener(DATA_UPDATED_EVENT, handler)
+    return () => window.removeEventListener(DATA_UPDATED_EVENT, handler)
+  }, [refetch])
+
+  return {
+    countries: data ?? [],
+    loading: isLoading,
+    error: error instanceof Error ? error.message : null,
+    refresh,
+  }
+}
+
+export function useCountry(id: number | null): {
+  country: Country | undefined
+  loading: boolean
+  error: string | null
+  refresh: () => void
+} {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: makeCountryKey(id),
+    queryFn: async () => (id === null ? undefined : countryService.getCountry(id)),
+    enabled: id !== null,
+    staleTime: 30_000,
+  })
+
+  const refresh = useCallback(() => {
+    void refetch()
+  }, [refetch])
+
+  return {
+    country: id === null ? undefined : data?.id === id ? data : undefined,
+    loading: id === null ? false : isLoading,
+    error: error instanceof Error ? error.message : null,
+    refresh,
+  }
+}
+
+export function useCreateCountry(): {
+  createCountry: (data: CountryFormData) => Promise<number>
+  creating: boolean
+} {
+  const queryClient = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: (data: CountryFormData) => countryService.createCountry(data),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: LIST_KEY })
+    },
+  })
+
+  return {
+    createCountry: async (data: CountryFormData) => mutation.mutateAsync(data),
+    creating: mutation.isPending,
+  }
+}
+
+export function useUpdateCountry(): {
+  updateCountry: (id: number, data: Partial<CountryFormData>) => Promise<void>
+  updating: boolean
+} {
+  const queryClient = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<CountryFormData> }) =>
+      countryService.updateCountry(id, data),
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: makeCountryKey(variables.id) })
+      void queryClient.invalidateQueries({ queryKey: LIST_KEY })
+    },
+  })
+
+  return {
+    updateCountry: async (id: number, data: Partial<CountryFormData>) =>
+      mutation.mutateAsync({ id, data }),
+    updating: mutation.isPending,
+  }
+}
+
+export function useDeleteCountry(): {
+  deleteCountry: (id: number) => Promise<void>
+  deleting: boolean
+} {
+  const queryClient = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: (id: number) => countryService.deleteCountry(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: LIST_KEY })
+    },
+  })
+
+  return {
+    deleteCountry: async (id: number) => mutation.mutateAsync(id),
+    deleting: mutation.isPending,
+  }
+}
+
+/** 拖拽排序后写回顺序，并刷新列表 */
+export function useReorderCountries(): (ids: number[]) => Promise<void> {
+  const queryClient = useQueryClient()
+  return async (ids: number[]) => {
+    await countryService.reorderCountries(ids)
+    await queryClient.invalidateQueries({ queryKey: LIST_KEY })
+  }
+}
